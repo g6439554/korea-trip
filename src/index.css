@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans TC", ui-sans-serif, system-ui, sans-serif;
+  --color-trip-header: #4A4036;
+  --color-trip-accent: #D4A373;
+  --color-trip-bg: #FDFCF0;
+  --color-trip-card: #FFFFFF;
+  --color-trip-text: #5C544B;
+  --color-trip-sub: #A59D94;
+  --color-trip-highlight: #E9EDC9;
+  --color-trip-warm: #FEFAE0;
+  
+  --color-tag-food: #E76F51;
+  --color-tag-trans: #2A9D8F;
+  --color-tag-activity: #8AB17D;
+  --color-tag-shopping: #E9C46A;
+  --color-tag-hotel: #264653;
+}
+
+@layer base {
+  body {
+    @apply bg-trip-bg text-trip-text font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    overscroll-behavior-y: none;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  #root {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  input, textarea {
+    user-select: text;
+  }
+}
+
+:root {
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.timeline-line {
+  position: absolute;
+  left: 48px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: #E9EDC9;
+}
