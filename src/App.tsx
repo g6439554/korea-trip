@@ -735,11 +735,20 @@ const BLUE_KEYWORDS: Record<string, string> = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('day1');
-  const [lastDayTab, setLastDayTab] = useState<string>('day1');
-  const [daysData, setDaysData] = useState<DayData[]>(INITIAL_DAYS_DATA);
-  const [checklistSections, setChecklistSections] = useState<ChecklistSection[]>(INITIAL_CHECKLIST_SECTIONS);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('trip_active_tab') || 'day1');
+  const [lastDayTab, setLastDayTab] = useState<string>(() => localStorage.getItem('trip_last_day_tab') || 'day1');
+  const [daysData, setDaysData] = useState<DayData[]>(() => {
+    const saved = localStorage.getItem('trip_days_data');
+    return saved ? JSON.parse(saved) : INITIAL_DAYS_DATA;
+  });
+  const [checklistSections, setChecklistSections] = useState<ChecklistSection[]>(() => {
+    const saved = localStorage.getItem('trip_checklist_sections');
+    return saved ? JSON.parse(saved) : INITIAL_CHECKLIST_SECTIONS;
+  });
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem('trip_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [newItem, setNewItem] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newPayer, setNewPayer] = useState<'同豪' | 'circle' | '崑源'>('同豪');
@@ -753,12 +762,6 @@ export default function App() {
   const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<ItineraryItem>>({});
-
-  useEffect(() => {
-    if (activeTab.startsWith('day')) {
-      setLastDayTab(activeTab);
-    }
-  }, [activeTab]);
 
   useEffect(() => {
     const updateWeather = async () => {
@@ -805,12 +808,39 @@ export default function App() {
   );
 
   const KRW_TO_TWD = 0.0238; // 1 KRW ≈ 0.0238 TWD (Current approx rate)
-  const [totalBudget, setTotalBudget] = useState(1500000);
+  const [totalBudget, setTotalBudget] = useState(() => {
+    const saved = localStorage.getItem('trip_total_budget');
+    return saved ? parseInt(saved, 10) : 1500000;
+  });
   const [spentCurrencyMode, setSpentCurrencyMode] = useState<'KRW' | 'TWD'>('KRW');
   const [budgetCurrencyMode, setBudgetCurrencyMode] = useState<'KRW' | 'TWD'>('KRW');
   const [inputCurrencyMode, setInputCurrencyMode] = useState<'KRW' | 'TWD'>('KRW');
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [tempBudget, setTempBudget] = useState(totalBudget.toString());
+
+  useEffect(() => {
+    if (activeTab.startsWith('day')) {
+      setLastDayTab(activeTab);
+      localStorage.setItem('trip_last_day_tab', activeTab);
+    }
+    localStorage.setItem('trip_active_tab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_days_data', JSON.stringify(daysData));
+  }, [daysData]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_checklist_sections', JSON.stringify(checklistSections));
+  }, [checklistSections]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_expenses', JSON.stringify(expenses));
+  }, [expenses]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_total_budget', totalBudget.toString());
+  }, [totalBudget]);
 
   const spent = expenses.reduce((acc, curr) => {
     if (curr.currency === 'TWD') {
