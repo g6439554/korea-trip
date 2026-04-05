@@ -762,6 +762,13 @@ export default function App() {
   const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<ItineraryItem>>({});
+  const [addForm, setAddForm] = useState<Partial<ItineraryItem>>({
+    category: 'ACTIVITY',
+    time: '12:00',
+    title: '',
+    desc: '',
+    location: '',
+  });
 
   useEffect(() => {
     const updateWeather = async () => {
@@ -798,6 +805,49 @@ export default function App() {
     
     setSelectedItem({ ...selectedItem, ...editForm } as ItineraryItem);
     setIsEditing(false);
+  };
+
+  const deleteItineraryItem = (id: string) => {
+    setDaysData(prev => prev.map(day => ({
+      ...day,
+      items: day.items.filter(item => item.id !== id)
+    })));
+    setSelectedItem(null);
+  };
+
+  const handleAddItem = () => {
+    if (!addForm.title || !addForm.time) return;
+    
+    const newItem: ItineraryItem = {
+      id: Date.now().toString(),
+      category: (addForm.category as Category) || 'ACTIVITY',
+      time: addForm.time || '12:00',
+      title: addForm.title || '',
+      desc: addForm.desc || '',
+      location: addForm.location || '',
+      highlights: [],
+      recommendedMenu: [],
+      shoppingList: [],
+    };
+
+    setDaysData(prev => prev.map(day => {
+      if (day.id === activeTab) {
+        return {
+          ...day,
+          items: [...day.items, newItem].sort((a, b) => a.time.localeCompare(b.time))
+        };
+      }
+      return day;
+    }));
+
+    setIsAddModalOpen(false);
+    setAddForm({
+      category: 'ACTIVITY',
+      time: '12:00',
+      title: '',
+      desc: '',
+      location: '',
+    });
   };
 
   const sensors = useSensors(
@@ -864,12 +914,13 @@ export default function App() {
   };
 
   const addExpense = () => {
-    if (!newItem || !newAmount) return;
+    const amount = parseFloat(newAmount);
+    if (!newItem || isNaN(amount)) return;
     
     const expense: Expense = {
       id: Date.now().toString(),
       item: newItem,
-      amount: parseFloat(newAmount),
+      amount: amount,
       category: 'General',
       currency: inputCurrencyMode,
       payer: newPayer,
@@ -879,7 +930,6 @@ export default function App() {
     setExpenses([expense, ...expenses]);
     setNewItem('');
     setNewAmount('');
-    // Keep date/time/payer as they might be used for multiple entries
   };
 
   const deleteExpense = (id: string) => {
@@ -1512,12 +1562,20 @@ export default function App() {
                       <Check size={14} /> SAVE
                     </button>
                   ) : (
-                    <button 
-                      onClick={() => setIsEditing(true)}
-                      className="text-xs font-black text-trip-accent flex items-center gap-2 hover:opacity-70 transition-opacity"
-                    >
-                      <Edit2 size={14} /> EDIT
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => setIsEditing(true)}
+                        className="text-xs font-black text-trip-accent flex items-center gap-2 hover:opacity-70 transition-opacity"
+                      >
+                        <Edit2 size={14} /> EDIT
+                      </button>
+                      <button 
+                        onClick={() => deleteItineraryItem(selectedItem.id)}
+                        className="text-xs font-black text-red-500 flex items-center gap-2 hover:opacity-70 transition-opacity"
+                      >
+                        <Trash2 size={14} /> DELETE
+                      </button>
+                    </>
                   )}
                 </div>
                 <button onClick={() => setSelectedItem(null)} className="p-3 bg-trip-bg rounded-full hover:bg-trip-accent/10 transition-colors">
@@ -1678,45 +1736,64 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Time</label>
-                    <input type="time" className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" />
+                    <input 
+                      type="time" 
+                      value={addForm.time}
+                      onChange={(e) => setAddForm({ ...addForm, time: e.target.value })}
+                      className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Category</label>
-                    <select className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm appearance-none">
-                      <option>ACTIVITY</option>
-                      <option>FOOD</option>
-                      <option>TRANSPORT</option>
-                      <option>SHOPPING</option>
+                    <select 
+                      value={addForm.category}
+                      onChange={(e) => setAddForm({ ...addForm, category: e.target.value as Category })}
+                      className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm appearance-none"
+                    >
+                      <option value="ACTIVITY">ACTIVITY</option>
+                      <option value="FOOD">FOOD</option>
+                      <option value="TRANSPORT">TRANSPORT</option>
+                      <option value="SHOPPING">SHOPPING</option>
+                      <option value="HOTEL">HOTEL</option>
+                      <option value="FLIGHT">FLIGHT</option>
                     </select>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Title</label>
-                  <input type="text" placeholder="Location Name" className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" />
+                  <input 
+                    type="text" 
+                    placeholder="Location Name" 
+                    value={addForm.title}
+                    onChange={(e) => setAddForm({ ...addForm, title: e.target.value })}
+                    className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Description</label>
-                  <textarea placeholder="Details about this stop..." className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm h-28" />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest">Shopping List</label>
-                    <button className="text-[10px] font-black text-trip-accent flex items-center gap-1.5 bg-trip-accent/10 px-3 py-1 rounded-full">
-                      <Plus size={10} /> ADD SHOP
-                    </button>
-                  </div>
-                  <div className="text-[10px] text-trip-sub italic py-4 border-2 border-dashed border-trip-accent/10 rounded-2xl text-center bg-white/50">
-                    No shopping items yet.
-                  </div>
+                  <textarea 
+                    placeholder="Details about this stop..." 
+                    value={addForm.desc}
+                    onChange={(e) => setAddForm({ ...addForm, desc: e.target.value })}
+                    className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm h-28" 
+                  />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Notes (備註)</label>
-                  <textarea placeholder="Additional notes..." className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm h-20" />
+                  <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Location (Address)</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. Myeongdong" 
+                    value={addForm.location}
+                    onChange={(e) => setAddForm({ ...addForm, location: e.target.value })}
+                    className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
+                  />
                 </div>
 
-                <button className="w-full py-5 bg-trip-accent text-white rounded-2xl font-black shadow-lg shadow-trip-accent/30 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                <button 
+                  onClick={handleAddItem}
+                  className="w-full py-5 bg-trip-accent text-white rounded-2xl font-black shadow-lg shadow-trip-accent/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
                   SAVE ITEM
                 </button>
               </div>
