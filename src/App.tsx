@@ -761,6 +761,8 @@ export default function App() {
   const [newSectionTitle, setNewSectionTitle] = useState('');
   const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showSuccess, setShowSuccess] = useState<string | null>(null);
+  const [showError, setShowError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<ItineraryItem>>({});
   const [addForm, setAddForm] = useState<Partial<ItineraryItem>>({
     category: 'ACTIVITY',
@@ -816,13 +818,22 @@ export default function App() {
   };
 
   const handleAddItem = () => {
-    if (!addForm.title || !addForm.time) return;
+    if (!addForm.title?.trim()) {
+      setShowError('請輸入行程名稱');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
+    if (!addForm.time) {
+      setShowError('請選擇時間');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
     
     const newItem: ItineraryItem = {
       id: Date.now().toString(),
       category: (addForm.category as Category) || 'ACTIVITY',
       time: addForm.time || '12:00',
-      title: addForm.title || '',
+      title: addForm.title.trim(),
       desc: addForm.desc || '',
       location: addForm.location || '',
       highlights: [],
@@ -841,6 +852,10 @@ export default function App() {
     }));
 
     setIsAddModalOpen(false);
+    setShowError(null);
+    setShowSuccess('已成功新增行程！');
+    setTimeout(() => setShowSuccess(null), 3000);
+    
     setAddForm({
       category: 'ACTIVITY',
       time: '12:00',
@@ -915,11 +930,20 @@ export default function App() {
 
   const addExpense = () => {
     const amount = parseFloat(newAmount);
-    if (!newItem || isNaN(amount)) return;
+    if (!newItem.trim()) {
+      setShowError('請輸入項目名稱');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      setShowError('請輸入有效金額');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
     
     const expense: Expense = {
       id: Date.now().toString(),
-      item: newItem,
+      item: newItem.trim(),
       amount: amount,
       category: 'General',
       currency: inputCurrencyMode,
@@ -927,9 +951,14 @@ export default function App() {
       date: newDate,
       time: newTime
     };
-    setExpenses([expense, ...expenses]);
+    
+    setExpenses(prev => [expense, ...prev]);
     setNewItem('');
     setNewAmount('');
+    
+    setShowError(null);
+    setShowSuccess('已成功新增帳目！');
+    setTimeout(() => setShowSuccess(null), 3000);
   };
 
   const deleteExpense = (id: string) => {
@@ -1072,6 +1101,20 @@ export default function App() {
       </div>
 
       <main className="max-w-md mx-auto p-6">
+        {/* Global Toast */}
+        <AnimatePresence>
+          {showSuccess && (
+            <motion.div 
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 20 }}
+              exit={{ opacity: 0, y: -50 }}
+              className="fixed top-0 left-1/2 -translate-x-1/2 z-[200] bg-trip-accent text-white px-6 py-3 rounded-full shadow-2xl font-black text-sm flex items-center gap-2"
+            >
+              <Check size={18} /> {showSuccess}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {activeTab === 'checklist' ? (
             <motion.div
@@ -1294,6 +1337,17 @@ export default function App() {
                   >
                     ADD EXPENSE
                   </button>
+
+                  {showError && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-center text-xs font-black text-red-500 bg-red-50 py-2 rounded-lg border border-red-100"
+                    >
+                      {showError}
+                    </motion.div>
+                  )}
                 </div>
               </div>
 
@@ -1796,6 +1850,17 @@ export default function App() {
                 >
                   SAVE ITEM
                 </button>
+
+                {showError && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="text-center text-xs font-black text-red-500 bg-red-50 py-2 rounded-lg border border-red-100"
+                  >
+                    {showError}
+                  </motion.div>
+                )}
               </div>
             </motion.div>
           </motion.div>
