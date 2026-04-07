@@ -1076,13 +1076,19 @@ export default function App() {
   const handleLogin = async () => {
     try {
       setNicknameInput('');
-      await signInWithPopup(auth, googleProvider);
+      // Use signInWithPopup but handle potential iframe/mobile blocks
+      await signInWithPopup(auth, googleProvider).catch(err => {
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-by-user') {
+          throw new Error('登入視窗被阻擋或取消，請嘗試在瀏覽器中開啟新分頁操作。');
+        }
+        throw err;
+      });
       setShowSuccess('登入成功！');
       setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login Error:", error);
-      setShowError('登入失敗，請稍後再試');
-      setTimeout(() => setShowError(null), 3000);
+      setShowError(error.message || '登入失敗，請稍後再試');
+      setTimeout(() => setShowError(null), 5000);
     }
   };
 
@@ -1350,11 +1356,11 @@ export default function App() {
 
       {/* Nickname Selection Overlay */}
       {user && !userNickname && (
-        <div className="fixed inset-0 z-[100] bg-trip-header/90 backdrop-blur-md flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[100] bg-trip-header/90 backdrop-blur-md flex items-center justify-center p-6 overflow-y-auto">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white w-full max-w-xs rounded-[40px] p-8 text-center shadow-2xl"
+            className="bg-white w-full max-w-xs rounded-[40px] p-8 text-center shadow-2xl my-auto"
           >
             <h2 className="text-xl font-black text-trip-header mb-2">你是誰？</h2>
             <p className="text-trip-sub text-xs font-bold mb-8 uppercase tracking-widest">請輸入您的暱稱以同步資料</p>
@@ -1362,6 +1368,7 @@ export default function App() {
               <input 
                 type="text"
                 placeholder="輸入暱稱..."
+                autoFocus
                 value={nicknameInput}
                 onChange={(e) => setNicknameInput(e.target.value)}
                 className="w-full bg-trip-bg border-none rounded-2xl px-6 py-4 text-sm font-black focus:ring-2 focus:ring-trip-accent text-center"
