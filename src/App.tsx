@@ -20,7 +20,6 @@ import {
   Trash2,
   ExternalLink,
   Search,
-  Settings,
   X,
   Edit2,
   MoreVertical,
@@ -29,9 +28,31 @@ import {
   Bed,
   Check,
   ArrowLeftRight,
-  Receipt
+  Receipt,
+  Users,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  db,
+  auth,
+  googleProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  collection,
+  doc,
+  setDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  addDoc,
+  serverTimestamp,
+  deleteDoc,
+  getDoc,
+  User
+} from './firebase';
 import {
   DndContext, 
   closestCenter,
@@ -99,7 +120,7 @@ interface Expense {
   amount: number;
   category: string;
   currency: 'KRW' | 'TWD';
-  payer: '同豪' | 'circle' | '崑源';
+  payer: string;
   date: string;
   time: string;
 }
@@ -735,6 +756,7 @@ const BLUE_KEYWORDS: Record<string, string> = {
 };
 
 export default function App() {
+  const [tripName, setTripName] = useState<string>(() => localStorage.getItem('trip_name') || 'SEOUL TRIP');
   const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('trip_active_tab') || 'day1');
   const [lastDayTab, setLastDayTab] = useState<string>(() => localStorage.getItem('trip_last_day_tab') || 'day1');
   const [daysData, setDaysData] = useState<DayData[]>(() => {
@@ -749,9 +771,18 @@ export default function App() {
     const saved = localStorage.getItem('trip_expenses');
     return saved ? JSON.parse(saved) : [];
   });
+  const [groupExpenses, setGroupExpenses] = useState<Expense[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [userNickname, setUserNickname] = useState<string | null>(null);
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const tripId = 'main-trip'; // Using a fixed tripId for now
   const [newItem, setNewItem] = useState('');
   const [newAmount, setNewAmount] = useState('');
-  const [newPayer, setNewPayer] = useState<'同豪' | 'circle' | '崑源'>('同豪');
+  const [newPayer, setNewPayer] = useState<string>('');
+  const [groupNewItem, setGroupNewItem] = useState('');
+  const [groupNewAmount, setGroupNewAmount] = useState('');
+  const [groupNewPayer, setGroupNewPayer] = useState<string>('');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newTime, setNewTime] = useState(new Date().toTimeString().slice(0, 5));
   const [selectedItem, setSelectedItem] = useState<ItineraryItem | null>(null);
@@ -771,6 +802,74 @@ export default function App() {
     desc: '',
     location: '',
   });
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        // Fetch nickname
+        const userDoc = await getDoc(doc(db, 'users', u.uid));
+        if (userDoc.exists()) {
+          const nickname = userDoc.data().nickname;
+          setUserNickname(nickname);
+          setNewPayer(nickname);
+          setGroupNewPayer(nickname);
+        } else {
+          setUserNickname(null);
+        }
+      } else {
+        setUserNickname(null);
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    // Sync group expenses from Firestore
+    const q = query(
+      collection(db, 'trips', tripId, 'groupExpenses'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedExpenses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Expense[];
+      setGroupExpenses(fetchedExpenses);
+    }, (error) => {
+      console.error("Firestore Error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_name', tripName);
+  }, [tripName]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_active_tab', activeTab);
+    if (activeTab.startsWith('day')) {
+      localStorage.setItem('trip_last_day_tab', activeTab);
+      setLastDayTab(activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_days_data', JSON.stringify(daysData));
+  }, [daysData]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_checklist_sections', JSON.stringify(checklistSections));
+  }, [checklistSections]);
+
+  useEffect(() => {
+    localStorage.setItem('trip_expenses', JSON.stringify(expenses));
+  }, [expenses]);
 
   useEffect(() => {
     const updateWeather = async () => {
@@ -904,6 +1003,10 @@ export default function App() {
   }, [expenses]);
 
   useEffect(() => {
+    localStorage.setItem('trip_group_expenses', JSON.stringify(groupExpenses));
+  }, [groupExpenses]);
+
+  useEffect(() => {
     localStorage.setItem('trip_total_budget', totalBudget.toString());
   }, [totalBudget]);
 
@@ -929,6 +1032,11 @@ export default function App() {
   };
 
   const addExpense = () => {
+    if (user && !userNickname) {
+      setShowError('請先選擇暱稱');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
     const amount = parseFloat(newAmount);
     if (!newItem.trim()) {
       setShowError('請輸入項目名稱');
@@ -963,6 +1071,106 @@ export default function App() {
 
   const deleteExpense = (id: string) => {
     setExpenses(expenses.filter(e => e.id !== id));
+  };
+
+  const handleLogin = async () => {
+    try {
+      setNicknameInput('');
+      await signInWithPopup(auth, googleProvider);
+      setShowSuccess('登入成功！');
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (error) {
+      console.error("Login Error:", error);
+      setShowError('登入失敗，請稍後再試');
+      setTimeout(() => setShowError(null), 3000);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUserNickname(null);
+      setNicknameInput('');
+      setShowSuccess('已登出');
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (error) {
+      console.error("Logout Error:", error);
+    }
+  };
+
+  const handleSaveNickname = async () => {
+    if (!user || !nicknameInput.trim()) return;
+    try {
+      const nickname = nicknameInput.trim();
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        nickname: nickname
+      });
+      setUserNickname(nickname);
+      setNewPayer(nickname);
+      setGroupNewPayer(nickname);
+      setShowSuccess(`歡迎，${nickname}！`);
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (error) {
+      console.error("Save Nickname Error:", error);
+      setShowError('設定暱稱失敗');
+      setTimeout(() => setShowError(null), 3000);
+    }
+  };
+
+  const addGroupExpense = async () => {
+    if (!user) {
+      setShowError('請先登入以同步資料');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
+
+    const amount = parseFloat(groupNewAmount);
+    if (!groupNewItem.trim()) {
+      setShowError('請輸入項目名稱');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      setShowError('請輸入有效金額');
+      setTimeout(() => setShowError(null), 3000);
+      return;
+    }
+    
+    try {
+      await addDoc(collection(db, 'trips', tripId, 'groupExpenses'), {
+        item: groupNewItem.trim(),
+        amount: amount,
+        currency: inputCurrencyMode,
+        payer: groupNewPayer,
+        date: newDate,
+        time: newTime,
+        createdAt: serverTimestamp()
+      });
+      
+      setGroupNewItem('');
+      setGroupNewAmount('');
+      setShowError(null);
+      setShowSuccess('已成功新增共同帳目！');
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (error) {
+      console.error("Add Group Expense Error:", error);
+      setShowError('新增失敗，請檢查權限');
+      setTimeout(() => setShowError(null), 3000);
+    }
+  };
+
+  const deleteGroupExpense = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'trips', tripId, 'groupExpenses', id));
+      setShowSuccess('已刪除共同帳目');
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (error) {
+      console.error("Delete Group Expense Error:", error);
+      setShowError('刪除失敗');
+      setTimeout(() => setShowError(null), 3000);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -1046,7 +1254,40 @@ export default function App() {
         className="bg-trip-header text-trip-warm p-4 pb-2 rounded-b-[24px] shadow-lg shadow-trip-header/10"
         style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
       >
-        <h1 className="text-xl font-black tracking-[0.2em] mb-4 text-center">SEOUL TRIP</h1>
+        <div className="flex justify-between items-center mb-4">
+          <div className="w-10" /> {/* Spacer */}
+          <input 
+            value={tripName}
+            onChange={(e) => setTripName(e.target.value)}
+            className="bg-transparent border-none text-xl font-black tracking-[0.2em] text-center focus:ring-0 w-full uppercase"
+          />
+          <div className="w-10 flex justify-end items-center gap-2">
+            {user ? (
+              <>
+                <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-black opacity-40 uppercase tracking-widest">User</span>
+                  <button 
+                    onClick={() => {
+                      setNicknameInput(userNickname || '');
+                      setUserNickname(null);
+                    }}
+                    className="text-[10px] font-black hover:text-trip-accent transition-colors flex items-center gap-1"
+                  >
+                    {userNickname}
+                    <Edit2 size={10} />
+                  </button>
+                </div>
+                <button onClick={handleLogout} className="text-trip-warm opacity-60 hover:opacity-100 transition-opacity">
+                  <LogOut size={20} />
+                </button>
+              </>
+            ) : (
+              <button onClick={handleLogin} className="text-trip-warm opacity-60 hover:opacity-100 transition-opacity">
+                <LogIn size={20} />
+              </button>
+            )}
+          </div>
+        </div>
         
         {/* Date Navigation - Only show if in a day tab */}
         {activeTab.startsWith('day') && (
@@ -1098,7 +1339,58 @@ export default function App() {
           <Receipt size={22} strokeWidth={activeTab === 'accounting' ? 2.5 : 2} />
           <span className="text-[8px] font-black tracking-widest uppercase">Accounting</span>
         </button>
+        <button 
+          onClick={() => setActiveTab('split')} 
+          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'split' ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+        >
+          <Users size={22} strokeWidth={activeTab === 'split' ? 2.5 : 2} />
+          <span className="text-[8px] font-black tracking-widest uppercase">Split</span>
+        </button>
       </div>
+
+      {/* Nickname Selection Overlay */}
+      {user && !userNickname && (
+        <div className="fixed inset-0 z-[100] bg-trip-header/90 backdrop-blur-md flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white w-full max-w-xs rounded-[40px] p-8 text-center shadow-2xl"
+          >
+            <h2 className="text-xl font-black text-trip-header mb-2">你是誰？</h2>
+            <p className="text-trip-sub text-xs font-bold mb-8 uppercase tracking-widest">請輸入您的暱稱以同步資料</p>
+            <div className="space-y-4">
+              <input 
+                type="text"
+                placeholder="輸入暱稱..."
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                className="w-full bg-trip-bg border-none rounded-2xl px-6 py-4 text-sm font-black focus:ring-2 focus:ring-trip-accent text-center"
+              />
+              <button
+                onClick={handleSaveNickname}
+                disabled={!nicknameInput.trim()}
+                className="w-full py-4 rounded-2xl bg-trip-accent text-white transition-all font-black text-sm tracking-widest uppercase shadow-lg shadow-trip-accent/20 active:scale-95 disabled:opacity-50 disabled:scale-100"
+              >
+                確認進入
+              </button>
+              <button 
+                onClick={async () => {
+                  const userDoc = await getDoc(doc(db, 'users', user.uid));
+                  if (userDoc.exists()) {
+                    setUserNickname(userDoc.data().nickname);
+                  } else {
+                    setShowError('請先設定暱稱');
+                    setTimeout(() => setShowError(null), 3000);
+                  }
+                }}
+                className="w-full text-trip-sub text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60 hover:opacity-100"
+              >
+                取消
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       <main className="max-w-md mx-auto p-6">
         {/* Global Toast */}
@@ -1319,15 +1611,12 @@ export default function App() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Paid By</label>
-                      <select 
+                      <input 
+                        type="text"
                         value={newPayer}
-                        onChange={(e) => setNewPayer(e.target.value as any)}
-                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black focus:ring-2 focus:ring-trip-accent transition-all appearance-none"
-                      >
-                        <option value="同豪">同豪</option>
-                        <option value="circle">circle</option>
-                        <option value="崑源">崑源</option>
-                      </select>
+                        readOnly
+                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black opacity-50 cursor-not-allowed"
+                      />
                     </div>
                   </div>
 
@@ -1360,11 +1649,7 @@ export default function App() {
                     {expenses.map((exp) => (
                       <div key={exp.id} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center group hover:border-trip-accent/20 transition-all shadow-sm">
                         <div className="flex gap-4 items-center">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black ${
-                            exp.payer === '同豪' ? 'bg-blue-100 text-blue-600' : 
-                            exp.payer === 'circle' ? 'bg-purple-100 text-purple-600' : 
-                            'bg-orange-100 text-orange-600'
-                          }`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
                             {exp.payer[0]}
                           </div>
                           <div>
@@ -1383,18 +1668,273 @@ export default function App() {
                               {exp.currency}
                             </div>
                           </div>
-                          <button 
-                            onClick={() => deleteExpense(exp.id)}
-                            className="text-gray-200 hover:text-red-400 transition-colors p-1"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          {(!userNickname || userNickname === exp.payer) && (
+                            <button 
+                              onClick={() => deleteExpense(exp.id)}
+                              className="text-gray-200 hover:text-red-400 transition-colors p-1"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
+            </motion.div>
+          ) : activeTab === 'split' ? (
+            <motion.div
+              key="split"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Group Expense Input Form */}
+              <div className="bg-white p-6 rounded-[32px] border border-trip-accent/10 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-sm font-black flex items-center text-trip-header uppercase tracking-widest">
+                    <Plus size={18} className="mr-2 text-trip-accent" /> New Group Expense
+                  </h3>
+                  <button 
+                    onClick={() => setInputCurrencyMode(prev => prev === 'KRW' ? 'TWD' : 'KRW')}
+                    className="flex items-center gap-2 text-[10px] font-black bg-trip-bg px-3 py-1.5 rounded-full text-trip-sub hover:bg-trip-accent/10 hover:text-trip-accent transition-all active:scale-95 border border-trip-accent/5"
+                  >
+                    <ArrowLeftRight size={12} />
+                    {inputCurrencyMode}
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Item Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="Group meal, taxi, etc." 
+                      value={groupNewItem}
+                      onChange={(e) => setGroupNewItem(e.target.value)}
+                      className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-trip-accent transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Amount ({inputCurrencyMode})</label>
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        value={groupNewAmount}
+                        onChange={(e) => setGroupNewAmount(e.target.value)}
+                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black focus:ring-2 focus:ring-trip-accent transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Paid By</label>
+                      <input 
+                        type="text"
+                        value={groupNewPayer}
+                        readOnly
+                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black opacity-50 cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={addGroupExpense}
+                    className="w-full bg-trip-accent text-white py-4 rounded-xl text-sm font-black shadow-lg shadow-trip-accent/20 hover:scale-[1.02] active:scale-[0.98] transition-all mt-2"
+                  >
+                    ADD GROUP EXPENSE
+                  </button>
+                </div>
+              </div>
+
+              {(() => {
+                const uniquePayers = Array.from(new Set([
+                  ...groupExpenses.map(exp => exp.payer),
+                  ...(userNickname ? [userNickname] : [])
+                ]));
+                
+                const personTotals = uniquePayers.reduce((acc, payer) => {
+                  acc[payer] = groupExpenses
+                    .filter(exp => exp.payer === payer)
+                    .reduce((sum, exp) => {
+                      if (exp.currency === 'TWD') {
+                        return sum + Math.round(exp.amount / KRW_TO_TWD);
+                      }
+                      return sum + exp.amount;
+                    }, 0);
+                  return acc;
+                }, {} as Record<string, number>);
+
+                const totalSpent = Object.values(personTotals).reduce((a, b) => (a as number) + (b as number), 0) as number;
+                const share = Math.round(totalSpent / uniquePayers.length);
+
+                const balances = uniquePayers.map(name => ({
+                  name,
+                  spent: personTotals[name],
+                  net: personTotals[name] - share
+                }));
+
+                // Calculate settlements
+                const settlements: { from: string; to: string; amount: number }[] = [];
+                const debtors = balances.filter(b => b.net < 0).sort((a, b) => a.net - b.net);
+                const creditors = balances.filter(b => b.net > 0).sort((a, b) => b.net - a.net);
+
+                let dIdx = 0;
+                let cIdx = 0;
+                const dNet = debtors.map(d => -d.net);
+                const cNet = creditors.map(c => c.net);
+
+                while (dIdx < dNet.length && cIdx < cNet.length) {
+                  const amount = Math.min(dNet[dIdx], cNet[cIdx]);
+                  if (amount > 0) {
+                    settlements.push({
+                      from: debtors[dIdx].name,
+                      to: creditors[cIdx].name,
+                      amount
+                    });
+                  }
+                  dNet[dIdx] -= amount;
+                  cNet[cIdx] -= amount;
+                  if (dNet[dIdx] === 0) dIdx++;
+                  if (cNet[cIdx] === 0) cIdx++;
+                }
+
+                return (
+                  <div className="space-y-6">
+                    {/* Summary Card */}
+                    <div className="bg-trip-header text-trip-warm p-8 rounded-[32px] shadow-xl shadow-trip-header/20">
+                      <div className="text-[10px] opacity-60 font-black uppercase tracking-widest mb-2">Total Group Expenses</div>
+                      <div className="text-4xl font-black mb-1">KRW {totalSpent.toLocaleString()}</div>
+                      <div className="text-[10px] opacity-40 font-bold mb-6">≈ TWD ${formatTWD(totalSpent as number)}</div>
+                      
+                      <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10">
+                        <div>
+                          <div className="text-[8px] opacity-50 font-black uppercase tracking-widest mb-1">Per Person</div>
+                          <div className="text-sm font-black">KRW {share.toLocaleString()}</div>
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <div className="text-[8px] opacity-50 font-black uppercase tracking-widest mb-1">Settlement Status</div>
+                          <div className="text-sm font-black text-trip-accent">
+                            {settlements.length === 0 ? 'All Settled' : `${settlements.length} Pending`}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Individual Totals */}
+                    <div className="space-y-4">
+                      <h3 className="text-[10px] font-black text-trip-sub uppercase tracking-[0.2em] px-2">Individual Contribution</h3>
+                      <div className="grid grid-cols-1 gap-3">
+                        {balances.map((b) => (
+                          <div key={b.name} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
+                                {b.name[0]}
+                              </div>
+                              <div>
+                                <div className="text-sm font-bold text-trip-header">{b.name}</div>
+                                <div className="text-[10px] font-bold text-trip-sub uppercase tracking-wider">
+                                  Spent: KRW {b.spent.toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className={`text-sm font-black ${b.net >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {b.net >= 0 ? '+' : ''}{b.net.toLocaleString()}
+                              </div>
+                              <div className="text-[9px] font-bold text-trip-sub uppercase tracking-wider">
+                                {b.net >= 0 ? 'To Receive' : 'To Pay'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Settlements */}
+                    <div className="space-y-4">
+                      <h3 className="text-[10px] font-black text-trip-sub uppercase tracking-[0.2em] px-2">Suggested Settlements</h3>
+                      {settlements.length === 0 ? (
+                        <div className="text-center py-12 text-trip-sub text-sm italic bg-white rounded-[32px] border border-dashed border-trip-accent/20">
+                          Everything is perfectly balanced!
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {settlements.map((s, i) => (
+                            <div key={i} className="bg-white p-6 rounded-[32px] border border-trip-accent/10 shadow-sm relative overflow-hidden">
+                              <div className="absolute top-0 left-0 w-1 h-full bg-trip-accent" />
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="text-center">
+                                    <div className="text-[10px] font-black text-trip-sub uppercase mb-1">From</div>
+                                    <div className="text-sm font-black text-trip-header">{s.from}</div>
+                                  </div>
+                                  <ChevronRight size={16} className="text-trip-accent mt-4" />
+                                  <div className="text-center">
+                                    <div className="text-[10px] font-black text-trip-sub uppercase mb-1">To</div>
+                                    <div className="text-sm font-black text-trip-header">{s.to}</div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] font-black text-trip-accent uppercase mb-1">Amount</div>
+                                  <div className="text-xl font-black text-trip-header">KRW {s.amount.toLocaleString()}</div>
+                                  <div className="text-[10px] font-bold text-trip-sub">≈ TWD ${formatTWD(s.amount)}</div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Group Expense Records */}
+                    <div className="space-y-4">
+                      <h3 className="text-[10px] font-black text-trip-sub uppercase tracking-[0.2em] px-2">Group Expense Records</h3>
+                      {groupExpenses.length === 0 ? (
+                        <div className="text-center py-12 text-trip-sub text-sm italic bg-white rounded-[32px] border border-dashed border-trip-accent/20">No group records yet</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {groupExpenses.map((exp) => (
+                            <div key={exp.id} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center group hover:border-trip-accent/20 transition-all shadow-sm">
+                              <div className="flex gap-4 items-center">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
+                                  {exp.payer[0]}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-bold text-trip-header">{exp.item}</div>
+                                  <div className="text-[10px] font-bold text-trip-sub uppercase tracking-wider">
+                                    {exp.date} • {exp.time} • {exp.payer}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                  <div className="text-sm font-black text-trip-header">
+                                    -{exp.amount.toLocaleString()}
+                                  </div>
+                                  <div className="text-[9px] font-bold text-trip-sub uppercase tracking-wider">
+                                    {exp.currency}
+                                  </div>
+                                </div>
+                                {userNickname === exp.payer && (
+                                  <button 
+                                    onClick={() => deleteGroupExpense(exp.id)}
+                                    className="text-gray-200 hover:text-red-400 transition-colors p-1"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           ) : activeTab === 'budget' ? (
             <motion.div

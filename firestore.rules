@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: trips
+    // Document ID: tripId (e.g., 'main-trip')
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //
+    // Collection: trips/{tripId}/groupExpenses
+    // Document ID: auto-generated
+    // Fields:
+    //   - item: string (required, size < 100)
+    //   - amount: number (required, positive)
+    //   - currency: string (required, 'KRW' or 'TWD')
+    //   - payer: string (required, '同豪', 'circle', '崑源')
+    //   - date: string (required)
+    //   - time: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidGroupExpense(data) {
+      return data.keys().hasAll(['item', 'amount', 'currency', 'payer', 'date', 'time', 'createdAt']) &&
+             data.item is string && data.item.size() > 0 && data.item.size() < 100 &&
+             data.amount is number && data.amount > 0 &&
+             data.currency in ['KRW', 'TWD'] &&
+             data.payer is string && data.payer.size() > 0 && data.payer.size() < 50 &&
+             data.date is string &&
+             data.time is string;
+    }
+
+    function getUserNickname() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nickname;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == uid;
+    }
+
+    match /trips/{tripId} {
+      // For this simple shared app, we allow authenticated users to read/write the main trip
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+
+      match /groupExpenses/{expenseId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && 
+                        isValidGroupExpense(request.resource.data) &&
+                        request.resource.data.payer == getUserNickname();
+        allow update: if isAuthenticated() && 
+                        isValidGroupExpense(request.resource.data) &&
+                        request.resource.data.payer == getUserNickname();
+        allow delete: if isAuthenticated() && 
+                        resource.data.payer == getUserNickname();
+      }
+    }
+  }
+}
