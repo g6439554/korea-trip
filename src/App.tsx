@@ -1118,42 +1118,59 @@ export default function App() {
       </header>
 
       {/* Main Navigation Bar - Moved below header */}
-      <div className="bg-trip-bg/95 backdrop-blur-xl border-b border-trip-accent/10 px-6 py-4 flex justify-around items-center sticky top-0 z-50 shadow-sm">
-        <button 
-          onClick={() => setActiveTab('checklist')} 
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'checklist' ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
-        >
-          <CheckSquare size={22} strokeWidth={activeTab === 'checklist' ? 2.5 : 2} />
-          <span className="text-[8px] font-black tracking-widest uppercase">Check</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab(lastDayTab)} 
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab.startsWith('day') ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
-        >
-          <Calendar size={22} strokeWidth={activeTab.startsWith('day') ? 2.5 : 2} />
-          <span className="text-[8px] font-black tracking-widest uppercase">Plan</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('budget')} 
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'budget' ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
-        >
-          <Wallet size={22} strokeWidth={activeTab === 'budget' ? 2.5 : 2} />
-          <span className="text-[8px] font-black tracking-widest uppercase">Budget</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('accounting')} 
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'accounting' ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
-        >
-          <Receipt size={22} strokeWidth={activeTab === 'accounting' ? 2.5 : 2} />
-          <span className="text-[8px] font-black tracking-widest uppercase">Accounting</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('split')} 
-          className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'split' ? 'text-trip-accent scale-110' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
-        >
-          <Users size={22} strokeWidth={activeTab === 'split' ? 2.5 : 2} />
-          <span className="text-[8px] font-black tracking-widest uppercase">Split</span>
-        </button>
+      <div className="bg-trip-bg/95 backdrop-blur-xl border-b border-trip-accent/10 px-2 py-2 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-md mx-auto grid grid-cols-5 gap-1">
+          <button 
+            onClick={() => setActiveTab('checklist')} 
+            className={`relative flex flex-col items-center gap-1 py-3 rounded-2xl transition-all duration-300 ${activeTab === 'checklist' ? 'text-trip-accent' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+          >
+            {activeTab === 'checklist' && (
+              <motion.div layoutId="activeTab" className="absolute inset-0 bg-trip-accent/10 rounded-2xl" />
+            )}
+            <CheckSquare size={22} strokeWidth={activeTab === 'checklist' ? 2.5 : 2} className="relative z-10" />
+            <span className="text-[8px] font-black tracking-widest uppercase relative z-10">Check</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab(lastDayTab)} 
+            className={`relative flex flex-col items-center gap-1 py-3 rounded-2xl transition-all duration-300 ${activeTab.startsWith('day') ? 'text-trip-accent' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+          >
+            {activeTab.startsWith('day') && (
+              <motion.div layoutId="activeTab" className="absolute inset-0 bg-trip-accent/10 rounded-2xl" />
+            )}
+            <Calendar size={22} strokeWidth={activeTab.startsWith('day') ? 2.5 : 2} className="relative z-10" />
+            <span className="text-[8px] font-black tracking-widest uppercase relative z-10">Plan</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('budget')} 
+            className={`relative flex flex-col items-center gap-1 py-3 rounded-2xl transition-all duration-300 ${activeTab === 'budget' ? 'text-trip-accent' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+          >
+            {activeTab === 'budget' && (
+              <motion.div layoutId="activeTab" className="absolute inset-0 bg-trip-accent/10 rounded-2xl" />
+            )}
+            <Wallet size={22} strokeWidth={activeTab === 'budget' ? 2.5 : 2} className="relative z-10" />
+            <span className="text-[8px] font-black tracking-widest uppercase relative z-10">Budget</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('accounting')} 
+            className={`relative flex flex-col items-center gap-1 py-3 rounded-2xl transition-all duration-300 ${activeTab === 'accounting' ? 'text-trip-accent' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+          >
+            {activeTab === 'accounting' && (
+              <motion.div layoutId="activeTab" className="absolute inset-0 bg-trip-accent/10 rounded-2xl" />
+            )}
+            <Receipt size={22} strokeWidth={activeTab === 'accounting' ? 2.5 : 2} className="relative z-10" />
+            <span className="text-[8px] font-black tracking-widest uppercase relative z-10">Accounting</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('split')} 
+            className={`relative flex flex-col items-center gap-1 py-3 rounded-2xl transition-all duration-300 ${activeTab === 'split' ? 'text-trip-accent' : 'text-trip-sub opacity-50 hover:opacity-100'}`}
+          >
+            {activeTab === 'split' && (
+              <motion.div layoutId="activeTab" className="absolute inset-0 bg-trip-accent/10 rounded-2xl" />
+            )}
+            <Users size={22} strokeWidth={activeTab === 'split' ? 2.5 : 2} className="relative z-10" />
+            <span className="text-[8px] font-black tracking-widest uppercase relative z-10">Split</span>
+          </button>
+        </div>
       </div>
 
       <main className="max-w-md mx-auto p-6">
