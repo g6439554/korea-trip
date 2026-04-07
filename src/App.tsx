@@ -20,6 +20,7 @@ import {
   Trash2,
   ExternalLink,
   Search,
+  Settings,
   X,
   Edit2,
   MoreVertical,
@@ -29,30 +30,9 @@ import {
   Check,
   ArrowLeftRight,
   Receipt,
-  Users,
-  LogIn,
-  LogOut
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  db,
-  auth,
-  googleProvider,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  collection,
-  doc,
-  setDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  addDoc,
-  serverTimestamp,
-  deleteDoc,
-  getDoc,
-  User
-} from './firebase';
 import {
   DndContext, 
   closestCenter,
@@ -120,7 +100,7 @@ interface Expense {
   amount: number;
   category: string;
   currency: 'KRW' | 'TWD';
-  payer: string;
+  payer: '同豪' | 'circle' | '崑源';
   date: string;
   time: string;
 }
@@ -756,7 +736,6 @@ const BLUE_KEYWORDS: Record<string, string> = {
 };
 
 export default function App() {
-  const [tripName, setTripName] = useState<string>(() => localStorage.getItem('trip_name') || 'SEOUL TRIP');
   const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('trip_active_tab') || 'day1');
   const [lastDayTab, setLastDayTab] = useState<string>(() => localStorage.getItem('trip_last_day_tab') || 'day1');
   const [daysData, setDaysData] = useState<DayData[]>(() => {
@@ -771,18 +750,16 @@ export default function App() {
     const saved = localStorage.getItem('trip_expenses');
     return saved ? JSON.parse(saved) : [];
   });
-  const [groupExpenses, setGroupExpenses] = useState<Expense[]>([]);
-  const [user, setUser] = useState<User | null>(null);
-  const [userNickname, setUserNickname] = useState<string | null>(null);
-  const [nicknameInput, setNicknameInput] = useState('');
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const tripId = 'main-trip'; // Using a fixed tripId for now
+  const [groupExpenses, setGroupExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem('trip_group_expenses');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [newItem, setNewItem] = useState('');
   const [newAmount, setNewAmount] = useState('');
-  const [newPayer, setNewPayer] = useState<string>('');
+  const [newPayer, setNewPayer] = useState<'同豪' | 'circle' | '崑源'>('同豪');
   const [groupNewItem, setGroupNewItem] = useState('');
   const [groupNewAmount, setGroupNewAmount] = useState('');
-  const [groupNewPayer, setGroupNewPayer] = useState<string>('');
+  const [groupNewPayer, setGroupNewPayer] = useState<'同豪' | 'circle' | '崑源'>('同豪');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newTime, setNewTime] = useState(new Date().toTimeString().slice(0, 5));
   const [selectedItem, setSelectedItem] = useState<ItineraryItem | null>(null);
@@ -802,74 +779,6 @@ export default function App() {
     desc: '',
     location: '',
   });
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        // Fetch nickname
-        const userDoc = await getDoc(doc(db, 'users', u.uid));
-        if (userDoc.exists()) {
-          const nickname = userDoc.data().nickname;
-          setUserNickname(nickname);
-          setNewPayer(nickname);
-          setGroupNewPayer(nickname);
-        } else {
-          setUserNickname(null);
-        }
-      } else {
-        setUserNickname(null);
-      }
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthReady) return;
-
-    // Sync group expenses from Firestore
-    const q = query(
-      collection(db, 'trips', tripId, 'groupExpenses'),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedExpenses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Expense[];
-      setGroupExpenses(fetchedExpenses);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthReady]);
-
-  useEffect(() => {
-    localStorage.setItem('trip_name', tripName);
-  }, [tripName]);
-
-  useEffect(() => {
-    localStorage.setItem('trip_active_tab', activeTab);
-    if (activeTab.startsWith('day')) {
-      localStorage.setItem('trip_last_day_tab', activeTab);
-      setLastDayTab(activeTab);
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    localStorage.setItem('trip_days_data', JSON.stringify(daysData));
-  }, [daysData]);
-
-  useEffect(() => {
-    localStorage.setItem('trip_checklist_sections', JSON.stringify(checklistSections));
-  }, [checklistSections]);
-
-  useEffect(() => {
-    localStorage.setItem('trip_expenses', JSON.stringify(expenses));
-  }, [expenses]);
 
   useEffect(() => {
     const updateWeather = async () => {
@@ -1032,11 +941,6 @@ export default function App() {
   };
 
   const addExpense = () => {
-    if (user && !userNickname) {
-      setShowError('請先選擇暱稱');
-      setTimeout(() => setShowError(null), 3000);
-      return;
-    }
     const amount = parseFloat(newAmount);
     if (!newItem.trim()) {
       setShowError('請輸入項目名稱');
@@ -1073,64 +977,7 @@ export default function App() {
     setExpenses(expenses.filter(e => e.id !== id));
   };
 
-  const handleLogin = async () => {
-    try {
-      setNicknameInput('');
-      // Use signInWithPopup but handle potential iframe/mobile blocks
-      await signInWithPopup(auth, googleProvider).catch(err => {
-        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-by-user') {
-          throw new Error('登入視窗被阻擋或取消，請嘗試在瀏覽器中開啟新分頁操作。');
-        }
-        throw err;
-      });
-      setShowSuccess('登入成功！');
-      setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error: any) {
-      console.error("Login Error:", error);
-      setShowError(error.message || '登入失敗，請稍後再試');
-      setTimeout(() => setShowError(null), 5000);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      setUserNickname(null);
-      setNicknameInput('');
-      setShowSuccess('已登出');
-      setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error) {
-      console.error("Logout Error:", error);
-    }
-  };
-
-  const handleSaveNickname = async () => {
-    if (!user || !nicknameInput.trim()) return;
-    try {
-      const nickname = nicknameInput.trim();
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        nickname: nickname
-      });
-      setUserNickname(nickname);
-      setNewPayer(nickname);
-      setGroupNewPayer(nickname);
-      setShowSuccess(`歡迎，${nickname}！`);
-      setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error) {
-      console.error("Save Nickname Error:", error);
-      setShowError('設定暱稱失敗');
-      setTimeout(() => setShowError(null), 3000);
-    }
-  };
-
-  const addGroupExpense = async () => {
-    if (!user) {
-      setShowError('請先登入以同步資料');
-      setTimeout(() => setShowError(null), 3000);
-      return;
-    }
-
+  const addGroupExpense = () => {
     const amount = parseFloat(groupNewAmount);
     if (!groupNewItem.trim()) {
       setShowError('請輸入項目名稱');
@@ -1143,40 +990,28 @@ export default function App() {
       return;
     }
     
-    try {
-      await addDoc(collection(db, 'trips', tripId, 'groupExpenses'), {
-        item: groupNewItem.trim(),
-        amount: amount,
-        currency: inputCurrencyMode,
-        payer: groupNewPayer,
-        date: newDate,
-        time: newTime,
-        createdAt: serverTimestamp()
-      });
-      
-      setGroupNewItem('');
-      setGroupNewAmount('');
-      setShowError(null);
-      setShowSuccess('已成功新增共同帳目！');
-      setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error) {
-      console.error("Add Group Expense Error:", error);
-      setShowError('新增失敗，請檢查權限');
-      setTimeout(() => setShowError(null), 3000);
-    }
+    const expense: Expense = {
+      id: Date.now().toString(),
+      item: groupNewItem.trim(),
+      amount: amount,
+      category: 'Group',
+      currency: inputCurrencyMode,
+      payer: groupNewPayer,
+      date: newDate,
+      time: newTime
+    };
+    
+    setGroupExpenses(prev => [expense, ...prev]);
+    setGroupNewItem('');
+    setGroupNewAmount('');
+    
+    setShowError(null);
+    setShowSuccess('已成功新增共同帳目！');
+    setTimeout(() => setShowSuccess(null), 3000);
   };
 
-  const deleteGroupExpense = async (id: string) => {
-    if (!user) return;
-    try {
-      await deleteDoc(doc(db, 'trips', tripId, 'groupExpenses', id));
-      setShowSuccess('已刪除共同帳目');
-      setTimeout(() => setShowSuccess(null), 3000);
-    } catch (error) {
-      console.error("Delete Group Expense Error:", error);
-      setShowError('刪除失敗');
-      setTimeout(() => setShowError(null), 3000);
-    }
+  const deleteGroupExpense = (id: string) => {
+    setGroupExpenses(groupExpenses.filter(e => e.id !== id));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -1260,40 +1095,7 @@ export default function App() {
         className="bg-trip-header text-trip-warm p-4 pb-2 rounded-b-[24px] shadow-lg shadow-trip-header/10"
         style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
       >
-        <div className="flex justify-between items-center mb-4">
-          <div className="w-10" /> {/* Spacer */}
-          <input 
-            value={tripName}
-            onChange={(e) => setTripName(e.target.value)}
-            className="bg-transparent border-none text-xl font-black tracking-[0.2em] text-center focus:ring-0 w-full uppercase"
-          />
-          <div className="w-10 flex justify-end items-center gap-2">
-            {user ? (
-              <>
-                <div className="flex flex-col items-end">
-                  <span className="text-[8px] font-black opacity-40 uppercase tracking-widest">User</span>
-                  <button 
-                    onClick={() => {
-                      setNicknameInput(userNickname || '');
-                      setUserNickname(null);
-                    }}
-                    className="text-[10px] font-black hover:text-trip-accent transition-colors flex items-center gap-1"
-                  >
-                    {userNickname}
-                    <Edit2 size={10} />
-                  </button>
-                </div>
-                <button onClick={handleLogout} className="text-trip-warm opacity-60 hover:opacity-100 transition-opacity">
-                  <LogOut size={20} />
-                </button>
-              </>
-            ) : (
-              <button onClick={handleLogin} className="text-trip-warm opacity-60 hover:opacity-100 transition-opacity">
-                <LogIn size={20} />
-              </button>
-            )}
-          </div>
-        </div>
+        <h1 className="text-xl font-black tracking-[0.2em] mb-4 text-center">SEOUL TRIP</h1>
         
         {/* Date Navigation - Only show if in a day tab */}
         {activeTab.startsWith('day') && (
@@ -1353,51 +1155,6 @@ export default function App() {
           <span className="text-[8px] font-black tracking-widest uppercase">Split</span>
         </button>
       </div>
-
-      {/* Nickname Selection Overlay */}
-      {user && !userNickname && (
-        <div className="fixed inset-0 z-[100] bg-trip-header/90 backdrop-blur-md flex items-center justify-center p-6 overflow-y-auto">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white w-full max-w-xs rounded-[40px] p-8 text-center shadow-2xl my-auto"
-          >
-            <h2 className="text-xl font-black text-trip-header mb-2">你是誰？</h2>
-            <p className="text-trip-sub text-xs font-bold mb-8 uppercase tracking-widest">請輸入您的暱稱以同步資料</p>
-            <div className="space-y-4">
-              <input 
-                type="text"
-                placeholder="輸入暱稱..."
-                autoFocus
-                value={nicknameInput}
-                onChange={(e) => setNicknameInput(e.target.value)}
-                className="w-full bg-trip-bg border-none rounded-2xl px-6 py-4 text-sm font-black focus:ring-2 focus:ring-trip-accent text-center"
-              />
-              <button
-                onClick={handleSaveNickname}
-                disabled={!nicknameInput.trim()}
-                className="w-full py-4 rounded-2xl bg-trip-accent text-white transition-all font-black text-sm tracking-widest uppercase shadow-lg shadow-trip-accent/20 active:scale-95 disabled:opacity-50 disabled:scale-100"
-              >
-                確認進入
-              </button>
-              <button 
-                onClick={async () => {
-                  const userDoc = await getDoc(doc(db, 'users', user.uid));
-                  if (userDoc.exists()) {
-                    setUserNickname(userDoc.data().nickname);
-                  } else {
-                    setShowError('請先設定暱稱');
-                    setTimeout(() => setShowError(null), 3000);
-                  }
-                }}
-                className="w-full text-trip-sub text-[10px] font-bold uppercase tracking-widest mt-2 opacity-60 hover:opacity-100"
-              >
-                取消
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
 
       <main className="max-w-md mx-auto p-6">
         {/* Global Toast */}
@@ -1618,12 +1375,15 @@ export default function App() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Paid By</label>
-                      <input 
-                        type="text"
+                      <select 
                         value={newPayer}
-                        readOnly
-                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black opacity-50 cursor-not-allowed"
-                      />
+                        onChange={(e) => setNewPayer(e.target.value as any)}
+                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black focus:ring-2 focus:ring-trip-accent transition-all appearance-none"
+                      >
+                        <option value="同豪">同豪</option>
+                        <option value="circle">circle</option>
+                        <option value="崑源">崑源</option>
+                      </select>
                     </div>
                   </div>
 
@@ -1656,7 +1416,11 @@ export default function App() {
                     {expenses.map((exp) => (
                       <div key={exp.id} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center group hover:border-trip-accent/20 transition-all shadow-sm">
                         <div className="flex gap-4 items-center">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black ${
+                            exp.payer === '同豪' ? 'bg-blue-100 text-blue-600' : 
+                            exp.payer === 'circle' ? 'bg-purple-100 text-purple-600' : 
+                            'bg-orange-100 text-orange-600'
+                          }`}>
                             {exp.payer[0]}
                           </div>
                           <div>
@@ -1675,14 +1439,12 @@ export default function App() {
                               {exp.currency}
                             </div>
                           </div>
-                          {(!userNickname || userNickname === exp.payer) && (
-                            <button 
-                              onClick={() => deleteExpense(exp.id)}
-                              className="text-gray-200 hover:text-red-400 transition-colors p-1"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          )}
+                          <button 
+                            onClick={() => deleteExpense(exp.id)}
+                            className="text-gray-200 hover:text-red-400 transition-colors p-1"
+                          >
+                            <Trash2 size={18} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1738,12 +1500,15 @@ export default function App() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Paid By</label>
-                      <input 
-                        type="text"
+                      <select 
                         value={groupNewPayer}
-                        readOnly
-                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black opacity-50 cursor-not-allowed"
-                      />
+                        onChange={(e) => setGroupNewPayer(e.target.value as any)}
+                        className="w-full bg-trip-bg/50 border-none rounded-xl px-4 py-3 text-sm font-black focus:ring-2 focus:ring-trip-accent transition-all appearance-none"
+                      >
+                        <option value="同豪">同豪</option>
+                        <option value="circle">circle</option>
+                        <option value="崑源">崑源</option>
+                      </select>
                     </div>
                   </div>
 
@@ -1757,12 +1522,8 @@ export default function App() {
               </div>
 
               {(() => {
-                const uniquePayers = Array.from(new Set([
-                  ...groupExpenses.map(exp => exp.payer),
-                  ...(userNickname ? [userNickname] : [])
-                ]));
-                
-                const personTotals = uniquePayers.reduce((acc, payer) => {
+                const payers = ['同豪', 'circle', '崑源'];
+                const personTotals = payers.reduce((acc, payer) => {
                   acc[payer] = groupExpenses
                     .filter(exp => exp.payer === payer)
                     .reduce((sum, exp) => {
@@ -1774,10 +1535,10 @@ export default function App() {
                   return acc;
                 }, {} as Record<string, number>);
 
-                const totalSpent = Object.values(personTotals).reduce((a, b) => (a as number) + (b as number), 0) as number;
-                const share = Math.round(totalSpent / uniquePayers.length);
+                const totalSpent = Object.values(personTotals).reduce((a, b) => a + b, 0);
+                const share = Math.round(totalSpent / payers.length);
 
-                const balances = uniquePayers.map(name => ({
+                const balances = payers.map(name => ({
                   name,
                   spent: personTotals[name],
                   net: personTotals[name] - share
@@ -1814,7 +1575,7 @@ export default function App() {
                     <div className="bg-trip-header text-trip-warm p-8 rounded-[32px] shadow-xl shadow-trip-header/20">
                       <div className="text-[10px] opacity-60 font-black uppercase tracking-widest mb-2">Total Group Expenses</div>
                       <div className="text-4xl font-black mb-1">KRW {totalSpent.toLocaleString()}</div>
-                      <div className="text-[10px] opacity-40 font-bold mb-6">≈ TWD ${formatTWD(totalSpent as number)}</div>
+                      <div className="text-[10px] opacity-40 font-bold mb-6">≈ TWD ${formatTWD(totalSpent)}</div>
                       
                       <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10">
                         <div>
@@ -1837,7 +1598,11 @@ export default function App() {
                         {balances.map((b) => (
                           <div key={b.name} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center shadow-sm">
                             <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black ${
+                                b.name === '同豪' ? 'bg-blue-100 text-blue-600' : 
+                                b.name === 'circle' ? 'bg-purple-100 text-purple-600' : 
+                                'bg-orange-100 text-orange-600'
+                              }`}>
                                 {b.name[0]}
                               </div>
                               <div>
@@ -1906,7 +1671,11 @@ export default function App() {
                           {groupExpenses.map((exp) => (
                             <div key={exp.id} className="bg-white p-5 rounded-2xl border border-trip-accent/5 flex justify-between items-center group hover:border-trip-accent/20 transition-all shadow-sm">
                               <div className="flex gap-4 items-center">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black bg-trip-accent/10 text-trip-accent`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black ${
+                                  exp.payer === '同豪' ? 'bg-blue-100 text-blue-600' : 
+                                  exp.payer === 'circle' ? 'bg-purple-100 text-purple-600' : 
+                                  'bg-orange-100 text-orange-600'
+                                }`}>
                                   {exp.payer[0]}
                                 </div>
                                 <div>
@@ -1925,14 +1694,12 @@ export default function App() {
                                     {exp.currency}
                                   </div>
                                 </div>
-                                {userNickname === exp.payer && (
-                                  <button 
-                                    onClick={() => deleteGroupExpense(exp.id)}
-                                    className="text-gray-200 hover:text-red-400 transition-colors p-1"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                )}
+                                <button 
+                                  onClick={() => deleteGroupExpense(exp.id)}
+                                  className="text-gray-200 hover:text-red-400 transition-colors p-1"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
                               </div>
                             </div>
                           ))}
