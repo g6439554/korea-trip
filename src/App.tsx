@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchWeather } from './services/weatherService';
+import { translateLocation, getLocationDetails } from './services/geminiService';
 import { 
   Calendar, 
   Cloud, 
@@ -560,16 +561,40 @@ function CategoryColor(category: Category) {
   }
 }
 
-const openExternalLink = (keyword: string) => {
-  const url = BLUE_KEYWORDS[keyword];
-  if (url) {
-    // If it's a naver map link, we can try to force app opening on mobile
-    // but standard https links usually handle this via universal links.
+const openExternalLink = async (keyword: string) => {
+  try {
+    const translated = await translateLocation(keyword);
+    const url = `https://map.naver.com/p/search/${encodeURIComponent(translated)}`;
+    window.open(url, '_blank');
+  } catch (error) {
+    console.error('Search error:', error);
+    // Fallback search if translation fails
+    const url = `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`;
     window.open(url, '_blank');
   }
 };
 
 const LinkCard = ({ keyword, index }: { keyword: string; index: number; key?: any }) => {
+  const [translated, setTranslated] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchTranslation = async () => {
+      setLoading(true);
+      try {
+        const result = await translateLocation(keyword);
+        if (result !== keyword) {
+          setTranslated(result);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTranslation();
+  }, [keyword]);
+
   return (
     <div 
       onClick={() => openExternalLink(keyword)}
@@ -579,7 +604,9 @@ const LinkCard = ({ keyword, index }: { keyword: string; index: number; key?: an
         <div className="p-2 bg-trip-accent/10 rounded-xl text-trip-accent group-hover:bg-trip-accent group-hover:text-white transition-colors">
           <Navigation size={16} />
         </div>
-        <span className="text-sm font-black text-black">{keyword}</span>
+        <div className="flex flex-col">
+          <span className="text-sm font-black text-black">{keyword}</span>
+        </div>
       </div>
       <div className="flex items-center gap-1 text-[10px] font-black text-trip-accent uppercase tracking-widest">
         開啟導航 <ChevronRight size={12} />
@@ -602,7 +629,11 @@ const LinkedDescription = ({ text }: { text: string }) => {
         const isKeyword = keywordList.some(k => k.toLowerCase() === part.toLowerCase());
         if (isKeyword) {
           return (
-            <span key={i} className="text-black font-black">
+            <span 
+              key={i} 
+              className="text-black font-black cursor-pointer hover:text-trip-accent transition-colors underline decoration-dotted decoration-trip-accent/30 underline-offset-4"
+              onClick={() => openExternalLink(part)}
+            >
               {part}
             </span>
           );
@@ -1087,6 +1118,23 @@ export default function App() {
     setNewChecklistItemText('');
     setIsChecklistAddOpen(null);
   };
+
+  const [modalTranslation, setModalTranslation] = useState<string>('');
+  const [locationDetail, setLocationDetail] = useState<string>('');
+
+  useEffect(() => {
+    if (selectedItem?.location && !isEditing) {
+      translateLocation(selectedItem.location).then(res => {
+        if (res !== selectedItem.location) setModalTranslation(res);
+      });
+      getLocationDetails(selectedItem.location).then(res => {
+        setLocationDetail(res);
+      });
+    } else {
+      setModalTranslation('');
+      setLocationDetail('');
+    }
+  }, [selectedItem, isEditing]);
 
   return (
     <div className="min-h-screen bg-trip-bg">
@@ -1995,31 +2043,33 @@ export default function App() {
                   ) : (
                     <div className="space-y-4 mb-4">
                       <h2 className="text-3xl font-black text-black leading-tight">
-                        {(() => {
-                          const keywordList = Object.keys(BLUE_KEYWORDS).sort((a, b) => b.length - a.length);
-                          const regex = new RegExp(`(${keywordList.join('|')})`, 'gi');
-                          const parts = selectedItem.title.split(regex);
-                          return parts.map((part, i) => {
-                            const isKeyword = keywordList.some(k => k.toLowerCase() === part.toLowerCase());
-                            if (isKeyword) {
-                              return <span key={i} className="text-black font-black">{part}</span>;
-                            }
-                            return part;
-                          });
-                        })()}
+                        {selectedItem.title}
                       </h2>
                       {(() => {
                         const keywordList = Object.keys(BLUE_KEYWORDS).sort((a, b) => b.length - a.length);
                         const regex = new RegExp(`(${keywordList.join('|')})`, 'gi');
-                        // Find keywords in BOTH title and description to show cards at the top
+                        
+                        // Start with the location field if it exists
+                        const cardItems: string[] = [];
+                        if (selectedItem.location) {
+                          cardItems.push(selectedItem.location);
+                        }
+                        
+                        // Add keywords found in title and description
                         const combinedText = selectedItem.title + ' ' + (selectedItem.desc || '');
-                        const foundKeywords = Array.from(new Set(combinedText.match(regex) || [])).map(k => {
-                          const match = k as string;
-                          return keywordList.find(key => key.toLowerCase() === match.toLowerCase()) || match;
+                        const foundKeywords = Array.from(new Set(combinedText.match(regex) || []));
+                        
+                        foundKeywords.forEach(k => {
+                          const keyword = keywordList.find(key => key.toLowerCase() === k.toLowerCase()) || k;
+                          // Avoid duplicates (case-insensitive)
+                          if (!cardItems.some(item => item.toLowerCase() === keyword.toLowerCase())) {
+                            cardItems.push(keyword);
+                          }
                         });
-                        return foundKeywords.length > 0 && (
+
+                        return cardItems.length > 0 && (
                           <div className="grid grid-cols-1 gap-3">
-                            {foundKeywords.map((keyword, i) => (
+                            {cardItems.map((keyword, i) => (
                               <LinkCard key={i} index={i} keyword={keyword} />
                             ))}
                           </div>
@@ -2037,7 +2087,14 @@ export default function App() {
                         className="w-full bg-trip-bg border-none rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-trip-accent"
                       />
                     ) : (
-                      <span>{selectedItem.location}</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-black text-black">
+                          {locationDetail || selectedItem.location}
+                        </span>
+                        {locationDetail && selectedItem.location && (
+                          <span className="text-[10px] text-trip-sub font-bold">{selectedItem.location}</span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -2166,13 +2223,23 @@ export default function App() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Location (Address)</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Myeongdong" 
-                    value={addForm.location}
-                    onChange={(e) => setAddForm({ ...addForm, location: e.target.value })}
-                    className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
-                  />
+                  <div className="relative group">
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Myeongdong" 
+                      value={addForm.location}
+                      onChange={(e) => setAddForm({ ...addForm, location: e.target.value })}
+                      className="w-full p-4 pr-14 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
+                    />
+                    <button 
+                      onClick={() => {
+                        if (addForm.location) openExternalLink(addForm.location);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-trip-accent/10 rounded-xl text-trip-accent hover:bg-trip-accent hover:text-white transition-all shadow-sm active:scale-90"
+                    >
+                      <Navigation size={18} />
+                    </button>
+                  </div>
                 </div>
 
                 <button 
