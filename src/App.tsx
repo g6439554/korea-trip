@@ -561,89 +561,6 @@ function CategoryColor(category: Category) {
   }
 }
 
-const openExternalLink = async (keyword: string) => {
-  try {
-    const translated = await translateLocation(keyword);
-    const url = `https://map.naver.com/p/search/${encodeURIComponent(translated)}`;
-    window.open(url, '_blank');
-  } catch (error) {
-    console.error('Search error:', error);
-    // Fallback search if translation fails
-    const url = `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`;
-    window.open(url, '_blank');
-  }
-};
-
-const LinkCard = ({ keyword, index }: { keyword: string; index: number; key?: any }) => {
-  const [translated, setTranslated] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const fetchTranslation = async () => {
-      setLoading(true);
-      try {
-        const result = await translateLocation(keyword);
-        if (result !== keyword) {
-          setTranslated(result);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTranslation();
-  }, [keyword]);
-
-  return (
-    <div 
-      onClick={() => openExternalLink(keyword)}
-      className="flex items-center justify-between p-4 bg-white rounded-2xl border border-trip-accent/10 shadow-sm hover:shadow-md hover:border-trip-accent/30 transition-all cursor-pointer group"
-    >
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-trip-accent/10 rounded-xl text-trip-accent group-hover:bg-trip-accent group-hover:text-white transition-colors">
-          <Navigation size={16} />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-black text-black">{keyword}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-1 text-[10px] font-black text-trip-accent uppercase tracking-widest">
-        開啟導航 <ChevronRight size={12} />
-      </div>
-    </div>
-  );
-};
-
-const LinkedDescription = ({ text }: { text: string }) => {
-  if (!text) return null;
-  
-  const keywordList = Object.keys(BLUE_KEYWORDS).sort((a, b) => b.length - a.length);
-  // Create a regex that matches any of these keywords
-  const regex = new RegExp(`(${keywordList.join('|')})`, 'gi');
-  const parts = text.split(regex);
-  
-  return (
-    <p className="text-sm text-black leading-relaxed bg-trip-highlight/30 p-4 rounded-2xl border border-trip-highlight/50">
-      {parts.map((part, i) => {
-        const isKeyword = keywordList.some(k => k.toLowerCase() === part.toLowerCase());
-        if (isKeyword) {
-          return (
-            <span 
-              key={i} 
-              className="text-black font-black cursor-pointer hover:text-trip-accent transition-colors underline decoration-dotted decoration-trip-accent/30 underline-offset-4"
-              onClick={() => openExternalLink(part)}
-            >
-              {part}
-            </span>
-          );
-        }
-        return part;
-      })}
-    </p>
-  );
-};
-
 interface SortableItemProps {
   item: ItineraryItem;
   onClick: () => void;
@@ -766,6 +683,82 @@ const BLUE_KEYWORDS: Record<string, string> = {
   '松島纜車': 'https://naver.me/xNmlczJB'
 };
 
+const LinkCard = ({ keyword, index, onOpen, isSearching }: { keyword: string; index: number; onOpen: (k: string) => void; isSearching: boolean; key?: React.Key }) => {
+  const [translated, setTranslated] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchTranslation = async () => {
+      setLoading(true);
+      try {
+        const result = await translateLocation(keyword);
+        if (result !== keyword) {
+          setTranslated(result);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTranslation();
+  }, [keyword]);
+
+  return (
+    <div 
+      onClick={() => onOpen(keyword)}
+      className="flex items-center justify-between p-4 bg-white rounded-2xl border border-trip-accent/10 shadow-sm hover:shadow-md hover:border-trip-accent/30 transition-all cursor-pointer group"
+    >
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-trip-accent/10 rounded-xl text-trip-accent group-hover:bg-trip-accent group-hover:text-white transition-colors">
+          {isSearching ? (
+            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Navigation size={16} />
+          )}
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-black text-black">
+            {loading ? 'Translating...' : (translated || keyword)}
+          </span>
+          {translated && <span className="text-[10px] text-trip-sub font-bold">{keyword}</span>}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 text-[10px] font-black text-trip-accent uppercase tracking-widest">
+        導航 <ChevronRight size={12} />
+      </div>
+    </div>
+  );
+};
+
+const LinkedDescription = ({ text, onOpen }: { text: string; onOpen: (k: string) => void }) => {
+  if (!text) return null;
+  
+  const keywordList = Object.keys(BLUE_KEYWORDS).sort((a, b) => b.length - a.length);
+  const regex = new RegExp(`(${keywordList.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <p className="text-sm text-black leading-relaxed bg-trip-highlight/30 p-4 rounded-2xl border border-trip-highlight/50">
+      {parts.map((part, i) => {
+        const isKeyword = keywordList.some(k => k.toLowerCase() === part.toLowerCase());
+        if (isKeyword) {
+          return (
+            <span 
+              key={i} 
+              className="text-black font-black cursor-pointer hover:text-trip-accent transition-colors underline decoration-dotted decoration-trip-accent/30 underline-offset-4"
+              onClick={() => onOpen(part)}
+            >
+              {part}
+            </span>
+          );
+        }
+        return part;
+      })}
+    </p>
+  );
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('trip_active_tab') || 'day1');
   const [lastDayTab, setLastDayTab] = useState<string>(() => localStorage.getItem('trip_last_day_tab') || 'day1');
@@ -795,6 +788,7 @@ export default function App() {
   const [newTime, setNewTime] = useState(new Date().toTimeString().slice(0, 5));
   const [selectedItem, setSelectedItem] = useState<ItineraryItem | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [isChecklistAddOpen, setIsChecklistAddOpen] = useState<string | null>(null);
   const [newChecklistItemText, setNewChecklistItemText] = useState('');
   const [newSectionTitle, setNewSectionTitle] = useState('');
@@ -803,6 +797,22 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState<string | null>(null);
   const [showError, setShowError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<ItineraryItem>>({});
+  const openExternalLink = async (keyword: string) => {
+    if (!keyword) return;
+    setIsSearchingLocation(true);
+    try {
+      const translated = await translateLocation(keyword);
+      const url = `https://map.naver.com/p/search/${encodeURIComponent(translated)}`;
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Search error:', error);
+      const url = `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`;
+      window.open(url, '_blank');
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
   const [addForm, setAddForm] = useState<Partial<ItineraryItem>>({
     category: 'ACTIVITY',
     time: '12:00',
@@ -2070,7 +2080,13 @@ export default function App() {
                         return cardItems.length > 0 && (
                           <div className="grid grid-cols-1 gap-3">
                             {cardItems.map((keyword, i) => (
-                              <LinkCard key={i} index={i} keyword={keyword} />
+                              <LinkCard 
+                                key={`card-${i}`} 
+                                index={i} 
+                                keyword={keyword} 
+                                onOpen={openExternalLink}
+                                isSearching={isSearchingLocation}
+                              />
                             ))}
                           </div>
                         );
@@ -2142,7 +2158,7 @@ export default function App() {
                         className="w-full h-32 bg-white border border-trip-accent/10 rounded-2xl p-5 text-sm focus:ring-2 focus:ring-trip-accent"
                       />
                     ) : (
-                      <LinkedDescription text={selectedItem.desc} />
+                      <LinkedDescription text={selectedItem.desc} onOpen={openExternalLink} />
                     )}
                   </div>
                 )}
@@ -2203,13 +2219,26 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Title</label>
-                  <input 
-                    type="text" 
-                    placeholder="Location Name" 
-                    value={addForm.title}
-                    onChange={(e) => setAddForm({ ...addForm, title: e.target.value })}
-                    className="w-full p-4 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
-                  />
+                  <div className="relative group">
+                    <input 
+                      type="text" 
+                      placeholder="Location Name" 
+                      value={addForm.title}
+                      onChange={(e) => setAddForm({ ...addForm, title: e.target.value })}
+                      className="w-full p-4 pr-14 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
+                    />
+                    <button 
+                      onClick={() => openExternalLink(addForm.title)}
+                      disabled={isSearchingLocation || !addForm.title}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-trip-accent/10 rounded-xl text-trip-accent hover:bg-trip-accent hover:text-white transition-all shadow-sm active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSearchingLocation ? (
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Navigation size={18} />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-trip-sub uppercase tracking-widest px-1">Description</label>
@@ -2232,12 +2261,15 @@ export default function App() {
                       className="w-full p-4 pr-14 bg-white rounded-2xl text-sm border-none focus:ring-2 focus:ring-trip-accent shadow-sm" 
                     />
                     <button 
-                      onClick={() => {
-                        if (addForm.location) openExternalLink(addForm.location);
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-trip-accent/10 rounded-xl text-trip-accent hover:bg-trip-accent hover:text-white transition-all shadow-sm active:scale-90"
+                      onClick={() => openExternalLink(addForm.location)}
+                      disabled={isSearchingLocation || !addForm.location}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-trip-accent/10 rounded-xl text-trip-accent hover:bg-trip-accent hover:text-white transition-all shadow-sm active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Navigation size={18} />
+                      {isSearchingLocation ? (
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Navigation size={18} />
+                      )}
                     </button>
                   </div>
                 </div>
