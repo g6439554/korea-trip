@@ -1,23 +1,20 @@
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY as string 
-});
-
 const translationCache: Record<string, string> = {};
 
 export const translateLocation = async (location: string): Promise<string> => {
   if (translationCache[location]) return translationCache[location];
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Translate the following location name from a travel itinerary to Korean for searching on Naver Maps. Only return the Korean name, nothing else. Location: "${location}"`,
+    const response = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location }),
     });
 
-    const result = (response.text?.trim() || location).replace(/^["']|["']$/g, '');
-    translationCache[location] = result;
-    return result;
+    if (!response.ok) throw new Error("Network response was not ok");
+    
+    const data = await response.json();
+    translationCache[location] = data.translated;
+    return data.translated;
   } catch (error) {
     console.error("Gemini translation error:", error);
     return location;
@@ -31,14 +28,17 @@ export const getLocationDetails = async (location: string): Promise<string> => {
   if (detailsCache[location]) return detailsCache[location];
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `For the location "${location}" in South Korea, provide exactly the administrative district (Gu) and the nearest Seoul subway station in Traditional Chinese. Format: "[District] · [Subway Station]". For example: "麻浦區 · 弘大入口站". Return only this string, nothing else.`,
+    const response = await fetch("/api/location-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location }),
     });
 
-    const result = response.text?.trim() || '';
-    detailsCache[location] = result;
-    return result;
+    if (!response.ok) throw new Error("Network response was not ok");
+
+    const data = await response.json();
+    detailsCache[location] = data.details || "";
+    return data.details || "";
   } catch (error) {
     console.error("Gemini details error:", error);
     return "";
